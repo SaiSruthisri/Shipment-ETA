@@ -1,34 +1,47 @@
 # AIQON Shipment ETA - Technical Report
 
-## Objective
+## 1. What I built
 
-The system estimates:
+The aim of this project is to predict the final delivery time of a shipment while
+the shipment is still moving through its journey.
 
-- final shipment ETA,
-- final delay in hours,
-- likelihood of a delay above six hours,
-- factors behind the prediction.
+The system gives three things:
 
-ETA is updated at three points in the journey:
+1. the expected final ETA,
+2. the expected delay in hours,
+3. the likelihood that the delay will be more than six hours.
 
-- **A - Departure:** departure information is available.
-- **B - Port arrival:** port-arrival information is available.
-- **C - Customs cleared:** customs information is available.
+It also gives a short explanation of why the shipment is expected to be delayed.
+The readable examples produced by the model are saved in `results/result.txt`.
 
-The delay target is:
+I treated ETA as something that changes when new shipment information becomes
+available. The model makes predictions at three checkpoints:
+
+- **Departure:** the shipment has left the origin.
+- **Port arrival:** the vessel has reached the port.
+- **Customs cleared:** customs information is available.
+
+## 2. How I calculate delay and ETA
+
+The final delay is defined as:
 
 `final delay = actual delivery time - scheduled delivery time`
 
-The final ETA is:
+The predicted ETA is:
 
-`predicted ETA = scheduled delivery time + predicted delay`
+`predicted ETA = scheduled delivery time + predicted final delay`
 
-I used six hours as the delayed/not-delayed threshold.
+For the delay likelihood, I used a six-hour threshold:
 
-## Data
+- up to six hours late: not delayed,
+- more than six hours late: delayed.
 
-I used synthetic data because the assignment allows it and because it lets me include
-the cases needed for this problem. The dataset contains 300 shipments over one year and
+The classifier converts this result into Low, Medium, or High likelihood.
+
+## 3. Data and assumptions
+
+I used synthetic data because the assignment allows a constructed dataset and the
+required size is 100-300 records. I generated 300 shipments over one year across
 five routes:
 
 - Nhava Sheva - Rotterdam
@@ -37,156 +50,148 @@ five routes:
 - Mundra - Jebel Ali
 - Chennai - Colombo
 
-The generator includes:
+The data includes the fields needed for an ETA problem:
 
-- scheduled and actual stage timestamps,
+- scheduled and actual timestamps,
 - route duration and route buffer,
-- route variability,
-- port congestion,
 - weather severity,
+- port congestion,
 - weekends and holidays,
-- seasonal effects,
-- missing intermediate timestamps,
-- missed berth windows,
-- storm, strike, and port closure events.
+- departure, port, customs, and inland stages,
+- missing intermediate timestamps.
 
-The journey is generated stage by stage. A late departure can affect port arrival.
-Arrival beyond the buffer can add a berth delay. Congestion affects port waiting and
-customs processing. Part of the delay is carried into inland delivery.
+I also included rare events such as storms, strikes, and port closures.
 
-The model input is `data/shipments.model.csv`. About 10% of intermediate timestamps are
-missing. The model keeps a missing flag and uses the previous known delay when it needs
-to fill a missing stage.
+The main assumptions are:
 
-## Model options
+- route duration and route variability are different for each route;
+- bad weather can delay the ocean journey;
+- congestion increases port waiting and customs processing;
+- arriving beyond the route buffer can cause a missed berth window;
+- weekends and holidays reduce available capacity;
+- some delay is absorbed, but some delay continues into the inland leg;
+- about 10% of intermediate timestamps may be missing.
 
-### Rule-based model
+These assumptions make the data behave more like a shipment process instead of
+being a random table.
 
-**Used for:** generating the shipment journey.
+## 4. How delay propagation is represented
 
-Rules are useful for creating delay propagation and anomalies. I did not use rules as
-the final predictor because fixed rules do not handle noisy operational data as well as
-a trained model.
+The generator creates the shipment in stages.
 
-### Ridge regression
+1. A departure delay can make the vessel late on the ocean leg.
+2. Weather can add more delay, while a limited recovery is possible during sailing.
+3. If port arrival is later than the route buffer, the shipment can miss its berth
+   window and receive an additional delay.
+4. Port congestion increases waiting time.
+5. Customs takes longer when congestion and a weekend or holiday are involved.
+6. Part of the accumulated delay is passed into inland delivery.
 
-**Used for:** baseline comparison.
+This means the model is not treating departure, port, customs, and final delivery
+as unrelated events. It uses the current delay and the interaction between stages
+to estimate the final delay.
 
-Ridge is simple and works well for mostly linear relationships. It does not capture
-the non-linear effect of congestion, buffer misses, and stage interactions as well as
-the selected model.
+When an intermediate timestamp is missing, the model carries forward the latest
+known delay and adds a missing-data flag. This lets the model use incomplete
+shipments without silently pretending that the information is complete.
 
-### Gradient Boosting
+## 5. Model approach
 
-**Used for:** final regression and classification models.
+I considered a few approaches:
 
-Gradient Boosting fits this small tabular dataset and can learn non-linear interactions.
-I used it to predict delay hours and the probability of a delay above six hours.
+- **Rules only:** useful for simulating delay propagation, but too fixed to be the
+  final predictor.
+- **Ridge regression:** simple and useful as a baseline, but less suitable for
+  non-linear effects such as congestion and missed buffers.
+- **Gradient Boosting:** selected because it works well with small tabular data and
+  can learn non-linear relationships between route, congestion, weather, and
+  stage delays.
+- **Neural network or time-series model:** not selected because 300 shipments is
+  too small to justify the added complexity.
 
-### Neural network or recurrent model
+I selected Gradient Boosting for both tasks:
 
-**Not used.**
+- a regressor predicts the final delay in hours;
+- a classifier predicts whether the final delay will exceed six hours.
 
-There are only 300 independent journeys. A neural model would add complexity and would
-be more likely to overfit without more historical event data.
+The model uses route, weather, congestion, calendar, observed stage delays,
+buffer interactions, and missing-data flags.
 
-### Survival model
-
-**Not used.**
-
-Survival models are useful when final delivery is unknown for many active shipments.
-Here, every generated shipment has a final outcome, so regression and classification
-are easier to validate.
-
-## Features
-
-The model uses:
-
-- route duration, buffer, variability, and inland duration,
-- port congestion and weather severity,
-- month, arrival day, weekend, holiday, and peak season,
-- observed departure, port-arrival, and customs delays,
-- lateness compared with the route buffer,
-- congestion squared,
-- congestion combined with days off,
-- lateness combined with congestion,
-- missing timestamp flags.
-
-The feature set is different at each checkpoint. Future stage information is not used
-to predict an earlier checkpoint.
-
-## Training and validation
+## 6. Training and evaluation
 
 The records are sorted by scheduled departure and split by time:
 
-- **Training:** 80% of data i.e, 240 shipments, 2 October 2025 to 31 July 2026.
-- **Testing:** 20% of data i.e, 60 shipments, 1 August 2026 to 30 September 2026.
+- **Training:** 240 shipments, 80% of the data.
+- **Testing:** 60 shipments, 20% of the data.
 
-I used a time split instead of only a random split because it is closer to the real
-case: use older shipments to predict later shipments.
+The test records are later shipments than the training records. This is closer to
+the real use case than randomly mixing older and newer shipments.
 
-Metrics:
+I used:
 
-- MAE for average delay error,
-- RMSE for larger errors,
-- AUC for delay ranking,
-- Brier score for probability quality,
-- F1 for classification balance.
+- **MAE:** average prediction error in hours;
+- **RMSE:** gives more weight to large errors;
+- **AUC:** measures how well the classifier ranks delayed shipments;
+- **F1:** balances precision and recall.
 
-I also compare against route-mean and persistence baselines.
+The model was also compared with route-average and persistence baselines.
 
-## Results
+## 7. Results
 
-| Checkpoint | Gradient Boosting MAE | Ridge MAE | Classifier AUC | Classifier F1 |
-|---|---:|---:|---:|---:|
-| A - Departure | 5.54 hours | 4.56 hours | 0.686 | 0.512 |
-| B - Port arrival | 4.31 hours | 3.66 hours | 0.857 | 0.720 |
-| C - Customs cleared | **1.53 hours** | 1.79 hours | **0.942** | **0.920** |
+| Checkpoint | Gradient Boosting MAE | Classifier AUC | Classifier F1 |
+|---|---:|---:|---:|
+| Departure | 5.54 hours | 0.686 | 0.512 |
+| Port arrival | 4.31 hours | 0.857 | 0.720 |
+| Customs cleared | **1.53 hours** | **0.942** | **0.920** |
 
-Checkpoint B is used for the detailed output:
+The model becomes more accurate as more shipment information becomes available.
+This is expected because the customs-cleared checkpoint has observed information
+from more of the journey.
 
-- MAE: 4.31 hours
-- RMSE: 6.23 hours
-- precision: 0.78
-- recall: 0.67
-- F1: 0.72
-The B checkpoint likelihood groups had these actual delay rates:
+At the main port-arrival checkpoint:
 
-- Low: 18%
-- Medium: 46%
-- High: 84%
+- MAE was 4.31 hours;
+- precision was 0.78;
+- recall was 0.67;
+- F1 was 0.72.
 
-Checkpoint C performs better because it has more observed information from the journey.
+The Low, Medium, and High groups also followed the expected order. Their actual
+delay rates were 18%, 46%, and 84% respectively.
 
-## Explanations
+## 8. Example output
 
-The output includes the scheduled delivery, predicted ETA, delay hours, likelihood,
-current port delay, and the top factors.
+This is one of the outputs generated by the trained model and saved in
+`results/result.txt`:
 
-The largest average SHAP groups were:
+```text
+Shipment #276 | Chennai-Singapore
+- ETA: 11 Sep 2026 09:30
+- Expected delay: +29.5 hours
+- Delay likelihood: High (92%)
+- Current port delay: +33.8 hours
+- Why:
+  - Late arrival and port congestion are increasing the expected delay.
+  - Port arrival is 7.0 hours beyond the route buffer.
+  - The shipment reached the port 33.8 hours late.
+```
 
-1. lateness,
-2. congestion,
-3. calendar,
-4. weather,
-5. route.
+This output is intended for a person reading the result. It gives the ETA first,
+then the delay, likelihood, and a few reasons. The reasons connect the prediction
+back to the shipment journey instead of only showing technical feature names.
 
-The lateness SHAP group had a 0.73 Spearman correlation with observed port-arrival
-delay. The congestion SHAP group had a 0.51 correlation with port congestion.
+## 9. Future enhancements
 
-This lets the output say more than just the ETA. It can show that the main cause is
-late arrival beyond the buffer, congestion, or a calendar effect.
-
-## Deployment
-
-Deployment is not part of this version. The trained models are saved in
-`results/eta_models.joblib`.
-
-A production version would add an API for shipment updates, the same feature-building
-logic, an ETA response with explanations, a dashboard, scheduled retraining, and
-monitoring for error, calibration, missing data, route drift, and anomalies.
-
-## Limitations
-
-The data is synthetic and the sample is small. It cannot cover every carrier, port,
-customs, or weather pattern. There is no live event feed, API, or dashboard yet.
+- **Customer alerts:** Send the updated ETA, expected delay, likelihood, and reason
+  by email, SMS, or a customer portal when delivery is at risk.
+- **Operations dashboard:** Show active shipments, risk levels, delayed routes,
+  port issues, and shipments that need attention.
+- **Customer and warehouse impact:** Identify which customer deliveries, warehouse
+  replenishments, and onward transport bookings may be affected.
+- **AI recommendations:** Suggest actions such as rescheduling inland transport,
+  prioritising customs, contacting the carrier, or notifying the customer.
+- **Early warnings:** Detect unusual increases in port congestion, carrier delays,
+  customs time, or route delays before they affect more shipments.
+- **Feedback loop:** Compare predicted and actual delivery times after completion
+  and use the results to improve the model.
+- **Real data and API:** Replace or supplement the synthetic data with historical
+  shipment data and expose the trained model through an API.
