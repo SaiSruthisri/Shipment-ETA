@@ -1,0 +1,16 @@
+checkpoint,model,MAE_h,RMSE_h,CV_MAE_h,AUC,Brier,F1
+A,Baseline: route mean,5.561,7.738,,,,
+A,Baseline: persistence (current delay stays),6.041,8.538,,,,
+A,Ridge regression,4.565,6.837,,,,
+A,Gradient boosting (main),5.535,7.546,5.457,,,
+A,Classifier (delay>6h),,,,0.686,0.245,0.512
+B,Baseline: route mean,5.561,7.738,,,,
+B,Baseline: persistence (current delay stays),5.463,7.922,,,,
+B,Ridge regression,3.658,5.547,,,,
+B,Gradient boosting (main),4.31,6.232,4.812,,,
+B,Classifier (delay>6h),,,,0.857,0.152,0.72
+C,Baseline: route mean,5.561,7.738,,,,
+C,Baseline: persistence (current delay stays),4.373,6.625,,,,
+C,Ridge regression,1.788,2.296,,,,
+C,Gradient boosting (main),1.527,2.133,2.231,,,
+C,Classifier (delay>6h),,,,0.942,0.062,0.92

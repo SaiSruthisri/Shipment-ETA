@@ -1,0 +1,31 @@
+Shipment #276 | Chennai-Singapore
+- ETA: 11 Sep 2026 09:30
+- Expected delay: +29.5 hours
+- Delay likelihood: High (92%)
+- Current port delay: +33.8 hours
+- Why:
+  - Late arrival and port congestion are increasing the expected delay.
+  - Port arrival is 7.0 hours beyond the route buffer.
+  - The shipment reached the port 33.8 hours late.
+
+
+Shipment #285 | Chennai-Colombo
+- ETA: 07 Sep 2026 01:47
+- Expected delay: +6.8 hours
+- Delay likelihood: Medium (54%)
+- Current port delay: +2.7 hours
+- Why:
+  - The planned day of arrival is affecting the estimate.
+  - The shipment left the origin 0.5 hours late.
+  - Late arrival and port congestion are offsetting part of the expected delay.
+
+
+Shipment #140 | Chennai-Colombo
+- ETA: 24 Sep 2026 09:30
+- Expected delay: -0.5 hours
+- Delay likelihood: Low (7%)
+- Current port delay: +2.4 hours
+- Why:
+  - The planned day of arrival is affecting the estimate.
+  - Port arrival is 1.0 hours beyond the route buffer.
+  - Late arrival and port congestion are offsetting part of the expected delay.
